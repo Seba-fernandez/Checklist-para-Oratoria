@@ -143,7 +143,7 @@ export default function App() {
 
           <div id="resultado">
             {mostrarResultado && (
-              <Resultado checks={checks} diag={diag} onGuardar={guardarSesion} tituloLectura={tituloLectura} />
+              <Resultado checks={checks} diag={diag} onGuardar={guardarSesion} tituloLectura={tituloLectura} sesionesAnteriores={sesiones} />
             )}
           </div>
         </main>

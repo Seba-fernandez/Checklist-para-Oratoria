@@ -1,78 +1,45 @@
 import { useState } from 'react';
 
 /*
-  Historial de sesiones — sidebar derecho en desktop, sección abajo en mobile.
+  Historial de sesiones con métricas de progreso generadas por IA.
   
-  Props:
-    sesiones → [{id, titulo, fecha, area, resumen, items, notas, scores}]
-    onBorrar → función(id)
+  Cada sesión tiene un campo `progreso` (generado por Claude al guardar):
+  {
+    "Claridad":  { nota: 7, tendencia: "mejorando", detalle: "..." },
+    "Ritmo":     { nota: 5, tendencia: "estable",   detalle: "..." },
+    ...
+  }
   
-  scores es un array por sesión: [{name: "Claridad", count: 3, total: 5}, ...]
-  Se usa para calcular las métricas de progreso.
+  La sección "Tu progreso" muestra las notas de la ÚLTIMA sesión guardada,
+  porque la IA ya incorporó todo el historial previo en su evaluación.
 */
 
-// ── MÉTRICAS DE PROGRESO ──────────────────────
-// Compara las últimas 3 sesiones vs las 3 anteriores.
-// Si no hay suficientes, compara la última vs la primera.
-// Devuelve un array con el estado de cada bloque.
-function calcularProgreso(sesiones) {
-  if (sesiones.length < 2) return null;
+const COLORES_TENDENCIA = {
+  mejorando:  '#34d399',
+  estable:    'var(--gold)',
+  empeorando: '#f87171'
+};
 
-  // sesiones[0] es la más reciente
-  const ultima = sesiones[0];
-  const primera = sesiones[sesiones.length - 1];
+const ICONOS_TENDENCIA = {
+  mejorando:  '↗',
+  estable:    '→',
+  empeorando: '↘'
+};
 
-  if (!ultima.scores || !primera.scores) return null;
-
-  // Si hay 6+, promediamos últimas 3 vs anteriores 3.
-  // Si hay menos, comparamos última vs primera.
-  const recientes = sesiones.slice(0, Math.min(3, sesiones.length));
-  const anteriores = sesiones.length >= 6
-    ? sesiones.slice(3, 6)
-    : [sesiones[sesiones.length - 1]];
-
-  function promedioBloque(grupo, nombreBloque) {
-    const validos = grupo.filter(s => s.scores);
-    if (validos.length === 0) return null;
-    const suma = validos.reduce((acc, s) => {
-      const b = s.scores.find(x => x.name === nombreBloque);
-      return acc + (b ? b.count / b.total : 0);
-    }, 0);
-    return suma / validos.length;
-  }
-
-  // Nombres de bloques sacados de la primera sesión con scores
-  const nombres = (ultima.scores || []).map(s => s.name);
-
-  return nombres.map(name => {
-    const ahora = promedioBloque(recientes, name);
-    const antes = promedioBloque(anteriores, name);
-
-    if (ahora === null || antes === null) return { name, estado: 'sin-datos' };
-
-    const diff = antes - ahora; // positivo = mejoró (menos errores)
-    const pctActual = Math.round(ahora * 100);
-
-    let estado, color;
-    if (diff > 0.1) {
-      estado = '↗ Mejorando';
-      color = '#34d399'; // verde
-    } else if (diff < -0.1) {
-      estado = '↘ A reforzar';
-      color = '#f87171'; // rojo
-    } else {
-      estado = '→ Estable';
-      color = 'var(--gold)';
-    }
-
-    return { name, pctActual, estado, color };
-  });
+function colorNota(nota) {
+  if (nota >= 8) return '#34d399';
+  if (nota >= 6) return 'var(--gold)';
+  if (nota >= 4) return '#f59e0b';
+  return '#f87171';
 }
 
 export default function Historial({ sesiones, onBorrar }) {
   const [abierta, setAbierta] = useState(null);
 
-  const progreso = calcularProgreso(sesiones);
+  // Métricas: usamos el progreso de la sesión más reciente
+  // (la IA ya consideró todo el historial al generarlo)
+  const ultimaSesion = sesiones.length > 0 ? sesiones[0] : null;
+  const progreso = ultimaSesion?.progreso || null;
 
   return (
     <aside style={{
@@ -110,14 +77,13 @@ export default function Historial({ sesiones, onBorrar }) {
         )}
       </div>
 
-      {/* ── MÉTRICAS DE PROGRESO (solo si hay 2+ sesiones) ── */}
+      {/* ── MÉTRICAS DE PROGRESO (generadas por IA) ── */}
       {progreso && (
         <div style={{
           background: 'var(--surface2)',
           borderRadius: 10,
           padding: '0.75rem',
-          marginBottom: '1rem',
-          fontSize: '0.78rem'
+          marginBottom: '1rem'
         }}>
           <div style={{
             fontSize: '0.68rem',
@@ -126,62 +92,96 @@ export default function Historial({ sesiones, onBorrar }) {
             textTransform: 'uppercase',
             marginBottom: '0.5rem'
           }}>
-            Tu progreso
+            Tu progreso — evaluación IA
           </div>
 
-          {progreso.map(p => (
-            p.estado !== 'sin-datos' && (
-              <div key={p.name} style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                marginBottom: '0.35rem'
-              }}>
-                {/* Nombre del bloque */}
-                <span style={{ width: 70, color: 'var(--muted)', fontSize: '0.72rem', flexShrink: 0 }}>
-                  {p.name}
-                </span>
+          {Object.entries(progreso).map(([bloque, data]) => {
+            if (!data || !data.nota) return null;
+            const color = COLORES_TENDENCIA[data.tendencia] || 'var(--muted)';
+            const icono = ICONOS_TENDENCIA[data.tendencia] || '→';
 
-                {/* Barrita */}
+            return (
+              <div key={bloque} style={{ marginBottom: '0.5rem' }}>
+                {/* Fila: nombre + barra + nota */}
                 <div style={{
-                  flex: 1, height: 4,
-                  background: 'var(--border)',
-                  borderRadius: 99, overflow: 'hidden'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  marginBottom: '0.15rem'
                 }}>
+                  <span style={{ width: 70, color: 'var(--muted)', fontSize: '0.72rem', flexShrink: 0 }}>
+                    {bloque}
+                  </span>
+
+                  {/* Barra que va de 0 a 10 */}
                   <div style={{
-                    height: '100%',
-                    width: `${100 - p.pctActual}%`,
-                    background: p.color,
-                    borderRadius: 99,
-                    transition: 'width 0.6s ease'
-                  }} />
+                    flex: 1, height: 5,
+                    background: 'var(--border)',
+                    borderRadius: 99, overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${data.nota * 10}%`,
+                      background: colorNota(data.nota),
+                      borderRadius: 99,
+                      transition: 'width 0.6s ease'
+                    }} />
+                  </div>
+
+                  {/* Nota numérica */}
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    color: colorNota(data.nota),
+                    width: 20,
+                    textAlign: 'right'
+                  }}>
+                    {data.nota}
+                  </span>
+
+                  {/* Tendencia */}
+                  <span style={{
+                    fontSize: '0.65rem',
+                    color,
+                    fontWeight: 500,
+                    width: 14,
+                    textAlign: 'center'
+                  }}>
+                    {icono}
+                  </span>
                 </div>
 
-                {/* Estado */}
-                <span style={{
-                  fontSize: '0.65rem',
-                  color: p.color,
-                  fontWeight: 500,
-                  whiteSpace: 'nowrap',
-                  width: 75,
-                  textAlign: 'right'
-                }}>
-                  {p.estado}
-                </span>
+                {/* Detalle del coach (1 oración) */}
+                {data.detalle && (
+                  <div style={{
+                    fontSize: '0.68rem',
+                    color: 'var(--muted)',
+                    paddingLeft: 70 + 6,
+                    lineHeight: 1.3
+                  }}>
+                    {data.detalle}
+                  </div>
+                )}
               </div>
-            )
-          ))}
+            );
+          })}
 
+          {/* Leyenda */}
           <div style={{
-            marginTop: '0.4rem',
-            fontSize: '0.65rem',
+            marginTop: '0.5rem',
+            paddingTop: '0.4rem',
+            borderTop: '1px solid var(--border)',
+            fontSize: '0.62rem',
             color: 'var(--muted)',
-            lineHeight: 1.3
+            lineHeight: 1.4,
+            display: 'flex',
+            gap: '0.6rem',
+            flexWrap: 'wrap'
           }}>
-            Menos errores marcados = la barra crece.
-            {sesiones.length < 6
-              ? ' Compara primera vs última sesión.'
-              : ' Promedio últimas 3 vs anteriores 3.'}
+            <span><span style={{ color: '#34d399' }}>↗</span> Mejorando</span>
+            <span><span style={{ color: 'var(--gold)' }}>→</span> Estable</span>
+            <span><span style={{ color: '#f87171' }}>↘</span> A reforzar</span>
+            <span style={{ marginLeft: 'auto' }}>Nota 1-10</span>
           </div>
         </div>
       )}
@@ -264,38 +264,44 @@ export default function Historial({ sesiones, onBorrar }) {
                 {/* Resumen generado por la IA */}
                 <p style={{ marginBottom: '0.6rem' }}>{s.resumen}</p>
 
-                {/* Scores por bloque de esta sesión */}
-                {s.scores && (
+                {/* Progreso de ESTA sesión (plegable) */}
+                {s.progreso && (
                   <details style={{ marginBottom: '0.4rem' }}>
                     <summary style={{
                       cursor: 'pointer', fontSize: '0.75rem',
                       color: 'var(--muted)', padding: '0.2rem 0'
                     }}>
-                      Errores por bloque
+                      Evaluación por bloque
                     </summary>
                     <div style={{ marginTop: '0.25rem' }}>
-                      {s.scores.map(sc => (
-                        <div key={sc.name} style={{
-                          display: 'flex', alignItems: 'center',
-                          gap: '0.3rem', marginBottom: '0.2rem', fontSize: '0.72rem'
-                        }}>
-                          <span style={{ width: 60, color: 'var(--muted)' }}>{sc.name}</span>
-                          <div style={{
-                            flex: 1, height: 3,
-                            background: 'var(--border)', borderRadius: 99, overflow: 'hidden'
+                      {Object.entries(s.progreso).map(([bloque, data]) => {
+                        if (!data) return null;
+                        const color = COLORES_TENDENCIA[data.tendencia] || 'var(--muted)';
+                        const icono = ICONOS_TENDENCIA[data.tendencia] || '→';
+                        return (
+                          <div key={bloque} style={{
+                            display: 'flex', alignItems: 'center',
+                            gap: '0.3rem', marginBottom: '0.25rem', fontSize: '0.72rem'
                           }}>
+                            <span style={{ width: 60, color: 'var(--muted)' }}>{bloque}</span>
                             <div style={{
-                              height: '100%',
-                              width: `${Math.round((sc.count / sc.total) * 100)}%`,
-                              background: sc.count === 0 ? '#34d399' : sc.count >= sc.total * 0.6 ? '#f87171' : 'var(--gold)',
-                              borderRadius: 99
-                            }} />
+                              flex: 1, height: 3,
+                              background: 'var(--border)', borderRadius: 99, overflow: 'hidden'
+                            }}>
+                              <div style={{
+                                height: '100%',
+                                width: `${(data.nota || 0) * 10}%`,
+                                background: colorNota(data.nota || 0),
+                                borderRadius: 99
+                              }} />
+                            </div>
+                            <span style={{ color: colorNota(data.nota || 0), fontWeight: 600, width: 16, textAlign: 'right' }}>
+                              {data.nota}
+                            </span>
+                            <span style={{ color, width: 12, textAlign: 'center' }}>{icono}</span>
                           </div>
-                          <span style={{ color: 'var(--muted)', width: 24, textAlign: 'right' }}>
-                            {sc.count}/{sc.total}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </details>
                 )}

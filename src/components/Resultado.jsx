@@ -34,7 +34,7 @@ Respondé en español rioplatense (vos, tuteo), de forma directa y concisa. Sin 
 - Seguridad → volumen constante + terminar frases firme]`;
 }
 
-export default function Resultado({ checks, diag, onGuardar, tituloLectura }) {
+export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesionesAnteriores }) {
   const [respuesta, setRespuesta]   = useState('');
   const [cargando, setCargando]     = useState(true);
   const [error, setError]           = useState('');
@@ -98,13 +98,80 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura }) {
   }, []);
 
   // ── GUARDAR EN HISTORIAL ──────────────────────
-  // Hace una 2da llamada a Claude pidiendo un resumen corto en JSON.
-  // Después llama a onGuardar() que viene de App.jsx.
+  // Hace una 2da llamada a Claude con contexto de oratoria profesional.
+  // Le pasa el diagnóstico actual + historial previo para que evalúe
+  // con criterio real de oratoria, no solo contando errores.
   async function handleGuardar() {
     if (guardando || guardado) return;
     setGuardando(true);
 
     try {
+      // Armar resumen del historial previo para darle contexto a la IA
+      let contextoHistorial = '';
+      if (sesionesAnteriores && sesionesAnteriores.length > 0) {
+        // Últimas 5 sesiones como máximo para no pasarnos de tokens
+        const ultimas = sesionesAnteriores.slice(0, 5);
+        contextoHistorial = `\n\nHISTORIAL DE SESIONES ANTERIORES (de más reciente a más antigua):
+${ultimas.map((s, i) => {
+  const itemsTxt = (s.items || []).join(', ');
+  return `Sesión ${ultimas.length - i}: ${s.titulo || 'Sin título'} (${s.fecha})
+  Área crítica: ${s.area}
+  Errores: ${itemsTxt}
+  ${s.progreso ? `Evaluación anterior: ${JSON.stringify(s.progreso)}` : ''}`;
+}).join('\n')}`;
+      }
+
+      // Scores actuales por bloque
+      const scoresActuales = bloques.map(b => {
+        const count = b.items.filter((_, idx) => checks[`${b.id}-${idx}`]).length;
+        return `${b.name}: ${count}/${b.items.length} errores`;
+      }).join(', ');
+
+      const listaItems = itemsMarcados.map(it => `[${it.bloque}] ${it.texto}`);
+
+      const prompt = `Sos un coach profesional de oratoria con formación en fonoaudiología y técnica vocal. Evaluás el progreso de un alumno que practica lectura en voz alta.
+
+CONTEXTO DE LA EVALUACIÓN:
+- El alumno se graba leyendo fragmentos de texto de 2 minutos
+- Se escucha y marca los errores que detecta
+- Los 5 bloques de evaluación son: Claridad (dicción, pronunciación), Ritmo (velocidad, pausas rítmicas), Intención (expresividad, tono), Pausas (respiración, fraseo), Seguridad (firmeza, volumen)
+- Cada bloque tiene ~5 ítems negativos posibles
+
+LECTURA ACTUAL: "${tituloLectura || 'Sin título'}"
+ERRORES MARCADOS: ${scoresActuales}
+DETALLE: ${listaItems.join(', ')}
+
+DIAGNÓSTICO QUE RECIBIÓ:
+${respuesta}
+${contextoHistorial}
+
+Respondé SOLO un JSON válido, sin markdown ni backticks ni texto extra, con esta estructura:
+
+{
+  "area": "área crítica principal en 2-4 palabras",
+  "resumen": "qué falla técnicamente y una acción concreta, máximo 2 oraciones en español rioplatense",
+  "progreso": {
+    "Claridad": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "1 oración: qué cambió respecto a antes o qué observás si es la primera sesión"},
+    "Ritmo": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "..."},
+    "Intención": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "..."},
+    "Pausas": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "..."},
+    "Seguridad": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "..."}
+  }
+}
+
+CRITERIOS PARA LAS NOTAS (basate en estándares reales de oratoria):
+- 1-3: Problema severo, afecta la comprensión del mensaje
+- 4-5: Problema notable, el oyente lo percibe claramente
+- 6-7: Aceptable con margen de mejora, errores esporádicos
+- 8-9: Buen nivel, errores mínimos o técnicos
+- 10: Excelente, nivel profesional
+
+Para la tendencia: si no hay historial previo, poné "estable" y basate solo en los errores actuales.
+Si hay historial, compará los errores de esta sesión con las anteriores considerando:
+- No solo la cantidad sino el TIPO de error (no es lo mismo "me como finales" que "arrastro palabras")
+- El tipo de texto importa: un texto con vocabulario técnico dificulta Claridad, uno emotivo exige más Intención
+- Menos errores marcados en un bloque no siempre es mejora si el texto era más fácil`;
+
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -115,11 +182,8 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura }) {
         },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 300,
-          messages: [{
-            role: 'user',
-            content: `Resumí este diagnóstico de oratoria en JSON con esta estructura exacta. Respondé SOLO el JSON, sin markdown, sin backticks, sin texto extra:\n{"area": "área crítica en 2 a 4 palabras", "resumen": "qué falla y la acción a corregir, máximo 2 oraciones"}\n\nDiagnóstico:\n${respuesta}`
-          }]
+          max_tokens: 800,
+          messages: [{ role: 'user', content: prompt }]
         })
       });
 
@@ -127,21 +191,16 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura }) {
       const data = await res.json();
       let texto = (data.content?.[0]?.text || '').trim();
 
-      // Limpieza: si Claude metió ```json ... ```, lo sacamos.
+      // Limpieza defensiva
       texto = texto.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
 
-      // Parseo defensivo: si el JSON viene mal, fallback seguro.
       let parsed;
       try {
         parsed = JSON.parse(texto);
       } catch {
-        parsed = { area: 'Sin clasificar', resumen: texto.slice(0, 200) };
+        parsed = { area: 'Sin clasificar', resumen: texto.slice(0, 200), progreso: null };
       }
 
-      // Armar la lista de textos de ítems marcados (solo los textos, sin bloque).
-      const listaItems = itemsMarcados.map(it => `[${it.bloque}] ${it.texto}`);
-
-      // Armar las notas manuales como un string.
       const notas = [diag.problema, diag.ejemplo, diag.correccion]
         .filter(Boolean)
         .join(' • ');
@@ -156,12 +215,12 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura }) {
         resumen: parsed.resumen || '',
         items: listaItems,
         notas,
-        // Guardamos los scores por bloque para las métricas de progreso
         scores: bloques.map(b => ({
           name: b.name,
           count: b.items.filter((_, idx) => checks[`${b.id}-${idx}`]).length,
           total: b.items.length
-        }))
+        })),
+        progreso: parsed.progreso || null
       });
 
       setGuardado(true);
