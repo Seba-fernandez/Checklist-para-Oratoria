@@ -19,7 +19,19 @@ export default function App() {
   const [sesiones, setSesiones] = useState(() => {
     try {
       const guardado = localStorage.getItem('oratoria-historial');
-      return guardado ? JSON.parse(guardado) : [];
+      if (!guardado) return [];
+      const parsed = JSON.parse(guardado);
+
+      // Migración: sesiones viejas sin `scores` → se los generamos
+      // a partir de los items guardados (ej: "[Claridad] Cuesta entender...")
+      return parsed.map(s => {
+        if (s.scores) return s; // ya tiene, no tocar
+        const scores = bloques.map(b => {
+          const count = (s.items || []).filter(it => it.startsWith(`[${b.name}]`)).length;
+          return { name: b.name, count, total: b.items.length };
+        });
+        return { ...s, scores };
+      });
     } catch {
       return [];
     }
