@@ -34,10 +34,12 @@ Respondé en español rioplatense (vos, tuteo), de forma directa y concisa. Sin 
 - Seguridad → volumen constante + terminar frases firme]`;
 }
 
-export default function Resultado({ checks, diag }) {
-  const [respuesta, setRespuesta] = useState('');
-  const [cargando, setCargando]   = useState(true);
-  const [error, setError]         = useState('');
+export default function Resultado({ checks, diag, onGuardar, tituloLectura }) {
+  const [respuesta, setRespuesta]   = useState('');
+  const [cargando, setCargando]     = useState(true);
+  const [error, setError]           = useState('');
+  const [guardando, setGuardando]   = useState(false);
+  const [guardado, setGuardado]     = useState(false);
 
   // Calcular scores para las barras
   const scores = bloques
@@ -94,6 +96,83 @@ export default function Resultado({ checks, diag }) {
 
     llamarIA();
   }, []);
+
+  // ── GUARDAR EN HISTORIAL ──────────────────────
+  // Hace una 2da llamada a Claude pidiendo un resumen corto en JSON.
+  // Después llama a onGuardar() que viene de App.jsx.
+  async function handleGuardar() {
+    if (guardando || guardado) return;
+    setGuardando(true);
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 300,
+          messages: [{
+            role: 'user',
+            content: `Resumí este diagnóstico de oratoria en JSON con esta estructura exacta. Respondé SOLO el JSON, sin markdown, sin backticks, sin texto extra:\n{"area": "área crítica en 2 a 4 palabras", "resumen": "qué falla y la acción a corregir, máximo 2 oraciones"}\n\nDiagnóstico:\n${respuesta}`
+          }]
+        })
+      });
+
+      if (!res.ok) throw new Error(`API ${res.status}`);
+      const data = await res.json();
+      let texto = (data.content?.[0]?.text || '').trim();
+
+      // Limpieza: si Claude metió ```json ... ```, lo sacamos.
+      texto = texto.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+
+      // Parseo defensivo: si el JSON viene mal, fallback seguro.
+      let parsed;
+      try {
+        parsed = JSON.parse(texto);
+      } catch {
+        parsed = { area: 'Sin clasificar', resumen: texto.slice(0, 200) };
+      }
+
+      // Armar la lista de textos de ítems marcados (solo los textos, sin bloque).
+      const listaItems = itemsMarcados.map(it => `[${it.bloque}] ${it.texto}`);
+
+      // Armar las notas manuales como un string.
+      const notas = [diag.problema, diag.ejemplo, diag.correccion]
+        .filter(Boolean)
+        .join(' • ');
+
+      onGuardar({
+        titulo: tituloLectura || `Lectura ${Date.now()}`,
+        fecha: new Date().toLocaleString('es-AR', {
+          day: '2-digit', month: '2-digit', year: '2-digit',
+          hour: '2-digit', minute: '2-digit'
+        }),
+        area: parsed.area || 'Sin clasificar',
+        resumen: parsed.resumen || '',
+        items: listaItems,
+        notas,
+        // Guardamos los scores por bloque para las métricas de progreso
+        scores: bloques.map(b => ({
+          name: b.name,
+          count: b.items.filter((_, idx) => checks[`${b.id}-${idx}`]).length,
+          total: b.items.length
+        }))
+      });
+
+      setGuardado(true);
+      setTimeout(() => setGuardado(false), 2500);
+    } catch (e) {
+      alert('No se pudo guardar: ' + e.message);
+    } finally {
+      setGuardando(false);
+    }
+  }
+  // ── FIN GUARDAR ──────────────────────────────
 
   // Renderizar markdown básico (**negrita**, saltos de línea)
   function renderTexto(texto) {
@@ -173,6 +252,32 @@ export default function Resultado({ checks, diag }) {
         </div>
 
       </div>
+
+      {/* Botón guardar — solo aparece cuando ya hay respuesta */}
+      {respuesta && !cargando && !error && (
+        <div style={{ padding: '0.75rem 0 0', textAlign: 'right' }}>
+          <button
+            onClick={handleGuardar}
+            disabled={guardando || guardado}
+            style={{
+              background: guardado ? '#34d399' : 'var(--gold)',
+              color: '#0f0f0f',
+              border: 'none',
+              borderRadius: 8,
+              padding: '0.6rem 1.2rem',
+              fontFamily: 'DM Sans, sans-serif',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              cursor: guardando || guardado ? 'not-allowed' : 'pointer',
+              opacity: guardando ? 0.6 : 1,
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {guardando ? '⏳ Guardando...' : guardado ? '✓ Guardado' : '📑 Guardar en historial'}
+          </button>
+        </div>
+      )}
+
     </div>
   );
 }
