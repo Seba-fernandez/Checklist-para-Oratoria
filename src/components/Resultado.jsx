@@ -1,37 +1,17 @@
 import { useEffect, useState } from 'react';
 import { bloques } from '../data/bloques';
 
-const API_KEY = import.meta.env.VITE_ANTHROPIC_KEY;
-
-function buildPrompt(itemsMarcados, diag) {
-  const lineas = itemsMarcados.map(i => `- [${i.bloque}] ${i.texto}`).join('\n');
-
-  const diagExtra = [
-    diag.problema  && `Problema que notó: ${diag.problema}`,
-    diag.ejemplo   && `Ejemplo del audio: ${diag.ejemplo}`,
-    diag.correccion && `Corrección que intentó: ${diag.correccion}`,
-  ].filter(Boolean).join('\n');
-
-  return `Sos un coach de oratoria. Un alumno se grabó leyendo un fragmento de texto durante 2 minutos como ejercicio de un curso, se escuchó y marcó los siguientes problemas detectados:
-
-${lineas}
-${diagExtra ? `\nNota adicional del alumno:\n${diagExtra}` : ''}
-
-Respondé en español rioplatense (vos, tuteo), de forma directa y concisa. Sin saludos ni introducción. Usá este formato exacto:
-
-**ÁREA CRÍTICA:** [nombre del área más problemática en una línea]
-
-**QUÉ ESTÁ PASANDO:** [2-3 oraciones explicando qué falla técnicamente y por qué afecta la oratoria]
-
-**PARA LA PRÓXIMA GRABACIÓN:** [una sola acción concreta y específica, máximo 2 oraciones]
-
-**MINI GUÍA:**
-[según el área crítica, elegí UNO de estos y expandilo brevemente:
-- Dicción → leer más lento + exagerar pronunciación
-- Ritmo → marcar comas con pausa consciente
-- Intención → subrayar palabras clave antes de leer
-- Pausas → respirar antes de cada oración
-- Seguridad → volumen constante + terminar frases firme]`;
+// Las llamadas a la IA pasan por nuestra función serverless (/api/diagnostico).
+// La API key y los prompts viven en el servidor, nunca en el navegador.
+async function pedirIA(payload) {
+  const res = await fetch('/api/diagnostico', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  return data.texto || '';
 }
 
 export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesionesAnteriores }) {
@@ -65,28 +45,8 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesi
       setError('');
 
       try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': API_KEY,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-          },
-          body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 600,
-            messages: [{ role: 'user', content: buildPrompt(itemsMarcados, diag) }]
-          })
-        });
-
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error?.message || `Error ${res.status}`);
-        }
-
-        const data = await res.json();
-        setRespuesta(data.content?.[0]?.text || '');
+        const texto = await pedirIA({ tipo: 'diagnostico', items: itemsMarcados, diag });
+        setRespuesta(texto);
       } catch (e) {
         setError(e.message);
       } finally {
@@ -106,90 +66,21 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesi
     setGuardando(true);
 
     try {
-      // Armar resumen del historial previo para darle contexto a la IA
-      let contextoHistorial = '';
-      if (sesionesAnteriores && sesionesAnteriores.length > 0) {
-        // Últimas 5 sesiones como máximo para no pasarnos de tokens
-        const ultimas = sesionesAnteriores.slice(0, 5);
-        contextoHistorial = `\n\nHISTORIAL DE SESIONES ANTERIORES (de más reciente a más antigua):
-${ultimas.map((s, i) => {
-  const itemsTxt = (s.items || []).join(', ');
-  return `Sesión ${ultimas.length - i}: ${s.titulo || 'Sin título'} (${s.fecha})
-  Área crítica: ${s.area}
-  Errores: ${itemsTxt}
-  ${s.progreso ? `Evaluación anterior: ${JSON.stringify(s.progreso)}` : ''}`;
-}).join('\n')}`;
-      }
-
-      // Scores actuales por bloque
-      const scoresActuales = bloques.map(b => {
-        const count = b.items.filter((_, idx) => checks[`${b.id}-${idx}`]).length;
-        return `${b.name}: ${count}/${b.items.length} errores`;
-      }).join(', ');
-
       const listaItems = itemsMarcados.map(it => `[${it.bloque}] ${it.texto}`);
+      const scoresActuales = bloques.map(b => ({
+        name: b.name,
+        count: b.items.filter((_, idx) => checks[`${b.id}-${idx}`]).length,
+        total: b.items.length
+      }));
 
-      const prompt = `Sos un coach profesional de oratoria con formación en fonoaudiología y técnica vocal. Evaluás el progreso de un alumno que practica lectura en voz alta.
-
-CONTEXTO DE LA EVALUACIÓN:
-- El alumno se graba leyendo fragmentos de texto de 2 minutos
-- Se escucha y marca los errores que detecta
-- Los 5 bloques de evaluación son: Claridad (dicción, pronunciación), Ritmo (velocidad, pausas rítmicas), Intención (expresividad, tono), Pausas (respiración, fraseo), Seguridad (firmeza, volumen)
-- Cada bloque tiene ~5 ítems negativos posibles
-
-LECTURA ACTUAL: "${tituloLectura || 'Sin título'}"
-ERRORES MARCADOS: ${scoresActuales}
-DETALLE: ${listaItems.join(', ')}
-
-DIAGNÓSTICO QUE RECIBIÓ:
-${respuesta}
-${contextoHistorial}
-
-Respondé SOLO un JSON válido, sin markdown ni backticks ni texto extra, con esta estructura:
-
-{
-  "area": "área crítica principal en 2-4 palabras",
-  "resumen": "qué falla técnicamente y una acción concreta, máximo 2 oraciones en español rioplatense",
-  "progreso": {
-    "Claridad": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "1 oración: qué cambió respecto a antes o qué observás si es la primera sesión"},
-    "Ritmo": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "..."},
-    "Intención": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "..."},
-    "Pausas": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "..."},
-    "Seguridad": {"nota": 1-10, "tendencia": "mejorando|estable|empeorando", "detalle": "..."}
-  }
-}
-
-CRITERIOS PARA LAS NOTAS (basate en estándares reales de oratoria):
-- 1-3: Problema severo, afecta la comprensión del mensaje
-- 4-5: Problema notable, el oyente lo percibe claramente
-- 6-7: Aceptable con margen de mejora, errores esporádicos
-- 8-9: Buen nivel, errores mínimos o técnicos
-- 10: Excelente, nivel profesional
-
-Para la tendencia: si no hay historial previo, poné "estable" y basate solo en los errores actuales.
-Si hay historial, compará los errores de esta sesión con las anteriores considerando:
-- No solo la cantidad sino el TIPO de error (no es lo mismo "me como finales" que "arrastro palabras")
-- El tipo de texto importa: un texto con vocabulario técnico dificulta Claridad, uno emotivo exige más Intención
-- Menos errores marcados en un bloque no siempre es mejora si el texto era más fácil`;
-
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': API_KEY,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 800,
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-
-      if (!res.ok) throw new Error(`API ${res.status}`);
-      const data = await res.json();
-      let texto = (data.content?.[0]?.text || '').trim();
+      let texto = (await pedirIA({
+        tipo: 'progreso',
+        items: itemsMarcados,
+        scores: scoresActuales,
+        titulo: tituloLectura,
+        diagnostico: respuesta,
+        historial: sesionesAnteriores || [],
+      })).trim();
 
       // Limpieza defensiva
       texto = texto.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
@@ -215,11 +106,7 @@ Si hay historial, compará los errores de esta sesión con las anteriores consid
         resumen: parsed.resumen || '',
         items: listaItems,
         notas,
-        scores: bloques.map(b => ({
-          name: b.name,
-          count: b.items.filter((_, idx) => checks[`${b.id}-${idx}`]).length,
-          total: b.items.length
-        })),
+        scores: scoresActuales,
         progreso: parsed.progreso || null
       });
 

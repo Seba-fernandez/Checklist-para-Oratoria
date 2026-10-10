@@ -12,7 +12,7 @@ Después de escucharte, marcás los problemas que detectás en tu grabación org
 
 - React 18 + Vite
 - CSS con variables (sin frameworks)
-- Anthropic API (claude-haiku)
+- Anthropic API (claude-haiku) vía función serverless de Vercel
 
 ## Instalación para correr ésta app web
 
@@ -25,10 +25,12 @@ npm install
 Creá un archivo `.env` en la raíz del proyecto:
 
 ```
-VITE_ANTHROPIC_KEY=tu_api_key_aqui
+ANTHROPIC_API_KEY=tu_api_key_aqui
 ```
 
 Conseguís tu API key en [console.anthropic.com](https://console.anthropic.com).
+
+> ⚠️ No le pongas prefijo `VITE_`: Vite expone en el navegador todo lo que empieza con `VITE_`. La key solo la usa la función serverless `api/diagnostico.js`. En Vercel, cargala como variable de entorno `ANTHROPIC_API_KEY`.
 
 ```bash
 npm run dev
@@ -37,6 +39,8 @@ npm run dev
 ## Estructura
 
 ```
+api/
+└── diagnostico.js        # función serverless: arma los prompts y llama a Claude
 src/
 ├── App.jsx
 ├── data/
