@@ -26,13 +26,30 @@ function apiLocal() {
   };
 }
 
+function socialMeta(siteOrigin) {
+  return {
+    name: 'social-meta-origin',
+    transformIndexHtml(html) {
+      return html.replaceAll('%SITE_ORIGIN%', siteOrigin);
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   // Carga ANTHROPIC_API_KEY del .env SOLO del lado del servidor (sin prefijo VITE_,
   // así Vite nunca la mete en el JS que baja el navegador).
   const env = loadEnv(mode, process.cwd(), '');
   if (env.ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY;
 
+  const siteHost = env.VITE_SITE_URL
+    || process.env.VERCEL_PROJECT_PRODUCTION_URL
+    || process.env.VERCEL_URL
+    || '';
+  const siteOrigin = siteHost
+    ? new URL(/^https?:\/\//i.test(siteHost) ? siteHost : `https://${siteHost}`).origin
+    : '';
+
   return {
-    plugins: [react(), apiLocal()],
+    plugins: [react(), apiLocal(), socialMeta(siteOrigin)],
   };
 })
