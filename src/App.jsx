@@ -6,151 +6,146 @@ import Diagnostico from './components/Diagnostico';
 import Resultado from './components/Resultado';
 import Historial from './components/Historial';
 
+const DIAGNOSTICO_VACIO = { problema: '', ejemplo: '', correccion: '' };
+
+function cargarSesiones() {
+  try {
+    const guardado = localStorage.getItem('oratoria-historial');
+    if (!guardado) return [];
+    return JSON.parse(guardado).map(sesion => {
+      if (sesion.scores) return sesion;
+      const scores = bloques.map(bloque => ({
+        name: bloque.name,
+        count: (sesion.items || []).filter(item => item.startsWith(`[${bloque.name}]`)).length,
+        total: bloque.items.length,
+      }));
+      return { ...sesion, scores };
+    });
+  } catch {
+    return [];
+  }
+}
+
 export default function App() {
-  const [checks, setChecks]            = useState({});
-  const [diag, setDiag]                = useState({ problema: '', ejemplo: '', correccion: '' });
+  const [checks, setChecks] = useState({});
+  const [diag, setDiag] = useState(DIAGNOSTICO_VACIO);
   const [mostrarResultado, setMostrar] = useState(false);
   const [tituloLectura, setTituloLectura] = useState('');
-
-  /* ── HISTORIAL ──────────────────────────────────
-     Carga desde localStorage al abrir.
-     Se guarda automáticamente cada vez que cambia.
-  ────────────────────────────────────────────────*/
-  const [sesiones, setSesiones] = useState(() => {
-    try {
-      const guardado = localStorage.getItem('oratoria-historial');
-      if (!guardado) return [];
-      const parsed = JSON.parse(guardado);
-
-      // Migración: sesiones viejas sin `scores` → se los generamos
-      // a partir de los items guardados (ej: "[Claridad] Cuesta entender...")
-      return parsed.map(s => {
-        if (s.scores) return s; // ya tiene, no tocar
-        const scores = bloques.map(b => {
-          const count = (s.items || []).filter(it => it.startsWith(`[${b.name}]`)).length;
-          return { name: b.name, count, total: b.items.length };
-        });
-        return { ...s, scores };
-      });
-    } catch {
-      return [];
-    }
-  });
+  const [sesiones, setSesiones] = useState(cargarSesiones);
 
   useEffect(() => {
-    localStorage.setItem('oratoria-historial', JSON.stringify(sesiones));
+    try {
+      localStorage.setItem('oratoria-historial', JSON.stringify(sesiones));
+    } catch {
+      // La checklist sigue funcionando aunque el navegador no permita guardar.
+    }
   }, [sesiones]);
+
+  const totalItems = bloques.reduce((total, bloque) => total + bloque.items.length, 0);
+  const seleccionados = Object.values(checks).filter(Boolean).length;
+  const porcentaje = totalItems ? Math.round((seleccionados / totalItems) * 100) : 0;
+
+  function toggle(blockId, itemIdx) {
+    const key = `${blockId}-${itemIdx}`;
+    setChecks(prev => ({ ...prev, [key]: !prev[key] }));
+    setMostrar(false);
+  }
 
   function guardarSesion(sesion) {
     setSesiones(prev => [{ ...sesion, id: Date.now() }, ...prev]);
   }
 
   function borrarSesion(id) {
-    setSesiones(prev => prev.filter(s => s.id !== id));
-  }
-  /* ── FIN HISTORIAL ──────────────────────────── */
-
-  function toggle(blockId, itemIdx) {
-    const key = `${blockId}-${itemIdx}`;
-    setChecks(prev => ({ ...prev, [key]: !prev[key] }));
-  }
-
-  function evaluar() {
-    const total = Object.values(checks).filter(Boolean).length;
-    if (total === 0) { alert('Marcá al menos un punto antes de evaluar.'); return; }
-    setMostrar(true);
-    setTimeout(() => document.getElementById('resultado')?.scrollIntoView({ behavior: 'smooth' }), 50);
+    setSesiones(prev => prev.filter(sesion => sesion.id !== id));
   }
 
   function resetAll() {
     setChecks({});
-    setDiag({ problema: '', ejemplo: '', correccion: '' });
+    setDiag(DIAGNOSTICO_VACIO);
     setTituloLectura('');
     setMostrar(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  return (
-    <>
-      {/* Layout: 2 columnas en desktop, 1 en mobile */}
-      <style>{`
-        .app-layout {
-          display: grid;
-          grid-template-columns: minmax(0, 680px) 300px;
-          gap: 2rem;
-          max-width: 1040px;
-          margin: 0 auto;
-          align-items: start;
-        }
-        @media (max-width: 800px) {
-          .app-layout { grid-template-columns: 1fr; }
-        }
-      `}</style>
+  function evaluar() {
+    setMostrar(true);
+    window.setTimeout(() => document.getElementById('resultado')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }
 
+  return (
+    <div className="page-shell">
       <div className="app-layout">
-        {/* ====== COLUMNA IZQUIERDA: todo lo que ya existía ====== */}
-        <main>
-          {/* Input de título de lectura */}
-          <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
-            <label style={{
-              fontSize: '0.7rem', color: 'var(--gold)', letterSpacing: '0.12em',
-              textTransform: 'uppercase', display: 'block', marginBottom: '0.4rem'
-            }}>
-              Lectura actual
-            </label>
+        <main className="main-column">
+          <label className="reading-field">
+            <span className="eyebrow">Tu práctica de hoy</span>
             <input
+              className="reading-input"
               type="text"
-              placeholder='Ej: "El Principito — Cap. 3"'
+              placeholder="Nombre de la lectura (opcional)"
               value={tituloLectura}
-              onChange={e => setTituloLectura(e.target.value)}
-              style={{
-                width: '100%', maxWidth: 400,
-                background: 'var(--surface2)', border: '1px solid var(--border)',
-                borderRadius: 8, color: 'var(--text)',
-                fontFamily: 'DM Serif Display, serif', fontSize: '1rem',
-                padding: '0.6rem 0.9rem', outline: 'none', textAlign: 'center'
-              }}
+              onChange={event => setTituloLectura(event.target.value)}
             />
-          </div>
+          </label>
 
           <Header />
 
-          {bloques.map(b => (
-            <Bloque key={b.id} bloque={b} checks={checks} onToggle={toggle} />
-          ))}
+          <section className="progress-card" aria-label="Avance de la checklist">
+            <div className="progress-top">
+              <h2 className="progress-title">Escucha con atención</h2>
+              <span className="progress-count">{seleccionados} de {totalItems}</span>
+            </div>
+            <div
+              className="progress-track"
+              role="progressbar"
+              aria-label="Puntos de escucha marcados"
+              aria-valuemin="0"
+              aria-valuemax={totalItems}
+              aria-valuenow={seleccionados}
+            >
+              <div className="progress-fill" style={{ width: `${porcentaje}%` }} />
+            </div>
+            <p className="progress-note">
+              {seleccionados === 0 ? 'Marcá los puntos que reconocés en tu grabación.' : `Ya identificaste ${seleccionados} ${seleccionados === 1 ? 'punto' : 'puntos'} para trabajar.`}
+            </p>
+          </section>
+
+          <div className="checklist" aria-label="Checklist de escucha activa">
+            {bloques.map(bloque => (
+              <Bloque key={bloque.id} bloque={bloque} checks={checks} onToggle={toggle} />
+            ))}
+          </div>
 
           <Diagnostico
             valores={diag}
-            onChange={(k, v) => setDiag(prev => ({ ...prev, [k]: v }))}
+            onChange={(key, value) => {
+              setDiag(prev => ({ ...prev, [key]: value }));
+              setMostrar(false);
+            }}
           />
 
-          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem' }}>
-            <button onClick={resetAll} style={{
-              background: 'transparent', border: '1px solid var(--border)',
-              color: 'var(--muted)', borderRadius: 10, padding: '0.75rem 1.2rem',
-              fontFamily: 'DM Sans, sans-serif', fontSize: '0.85rem', cursor: 'pointer'
-            }}>
-              ↺ Limpiar
-            </button>
-            <button onClick={evaluar} style={{
-              flex: 1, background: 'var(--accent)', border: 'none', color: 'white',
-              borderRadius: 10, padding: '0.85rem', fontFamily: 'DM Sans, sans-serif',
-              fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer'
-            }}>
-              Ver diagnóstico con IA →
+          <div className="action-row">
+            <button type="button" className="button button-quiet" onClick={resetAll}>Limpiar</button>
+            <button type="button" className="button button-primary" onClick={evaluar} disabled={seleccionados === 0}>
+              Ver mi diagnóstico <span aria-hidden="true">↗</span>
             </button>
           </div>
+          {seleccionados === 0 && <p className="action-hint">Marcá al menos un punto para habilitar el diagnóstico.</p>}
 
-          <div id="resultado">
+          <div id="resultado" aria-live="polite">
             {mostrarResultado && (
-              <Resultado checks={checks} diag={diag} onGuardar={guardarSesion} tituloLectura={tituloLectura} sesionesAnteriores={sesiones} />
+              <Resultado
+                checks={checks}
+                diag={diag}
+                onGuardar={guardarSesion}
+                tituloLectura={tituloLectura}
+                sesionesAnteriores={sesiones}
+              />
             )}
           </div>
         </main>
 
-        {/* ====== COLUMNA DERECHA: historial ====== */}
         <Historial sesiones={sesiones} onBorrar={borrarSesion} />
       </div>
-    </>
+    </div>
   );
 }
