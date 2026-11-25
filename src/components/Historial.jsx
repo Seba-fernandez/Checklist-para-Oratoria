@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { claseNota } from './claseNota';
 
 const TENDENCIAS = {
   mejorando: { icono: '↗', color: '#526e43' },
@@ -6,19 +7,12 @@ const TENDENCIAS = {
   empeorando: { icono: '↘', color: '#a84935' },
 };
 
-function colorNota(nota) {
-  if (nota >= 8) return '#526e43';
-  if (nota >= 6) return '#8e7544';
-  if (nota >= 4) return '#a84935';
-  return '#954f3d';
-}
-
 function Score({ nombre, nota, tendencia, detalle }) {
   const estado = TENDENCIAS[tendencia] || TENDENCIAS.estable;
   return (
     <div className="history-score" title={detalle || undefined}>
       <span className="history-score-name">{nombre}</span>
-      <div className="score-track"><div className="score-fill" style={{ width: `${Math.min(100, Math.max(0, Number(nota) * 10))}%`, background: colorNota(nota) }} /></div>
+      <div className="score-track"><div className={`score-fill nota-${claseNota(nota)}`} style={{ width: `${Math.min(100, Math.max(0, Number(nota) * 10))}%` }} /></div>
       <span className="history-score-value">{nota}</span>
       <span className="history-trend" style={{ color: estado.color }} aria-label={tendencia || 'estable'}>{estado.icono}</span>
     </div>
@@ -62,7 +56,11 @@ export default function Historial({ sesiones, onBorrar }) {
                 >
                   <span className="history-session-top"><span>Práctica {sesiones.length - index}</span><span>{sesion.fecha}</span></span>
                   <span className="history-session-name">{sesion.titulo || 'Lectura sin título'}</span>
-                  <span className="history-session-area">{estaAbierta ? '−' : '+'} {sesion.area}</span>
+                  <span className="history-session-area">
+                    {estaAbierta ? '−' : '+'} {sesion.area}
+                    {Number.isFinite(sesion.global) && <em className="history-session-tag">{sesion.global}/10</em>}
+                    {Number.isFinite(sesion.ppm) && <em className="history-session-tag">{sesion.ppm} ppm</em>}
+                  </span>
                 </button>
 
                 {estaAbierta && (

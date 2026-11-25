@@ -1,27 +1,39 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { bloques } from './data/bloques';
 import Header from './components/Header';
 import Bloque from './components/Bloque';
 import Diagnostico from './components/Diagnostico';
 import Resultado from './components/Resultado';
 import Historial from './components/Historial';
+import Medicion from './components/Medicion';
+import Fuentes from './components/Fuentes';
 
 const DIAGNOSTICO_VACIO = { problema: '', ejemplo: '', correccion: '' };
+const MEDICION_VACIA = { palabras: '', minutos: '', segundos: '' };
+const CLAVE_HISTORIAL = 'oratoria-historial';
+
+// Palabras por minuto a partir de lo que cargo el alumno. Si falta un dato,
+// devuelve undefined y el criterio de Ritmo queda solo autoevaluado.
+function calcularPpm({ palabras, minutos, segundos }) {
+  const p = Number(palabras);
+  const seg = Number(minutos || 0) * 60 + Number(segundos || 0);
+  if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(seg) || seg < 10) return undefined;
+  return (p / seg) * 60;
+}
 
 function cargarSesiones() {
   try {
-    const guardado = localStorage.getItem('oratoria-historial');
+    const guardado = localStorage.getItem(CLAVE_HISTORIAL);
     if (!guardado) return [];
-    return JSON.parse(guardado).map(sesion => {
-      if (sesion.scores) return sesion;
-      const scores = bloques.map(bloque => ({
-        name: bloque.name,
-        count: (sesion.items || []).filter(item => item.startsWith(`[${bloque.name}]`)).length,
-        total: bloque.items.length,
-      }));
-      return { ...sesion, scores };
-    });
+    const datos = JSON.parse(guardado);
+    return Array.isArray(datos) ? datos.filter(Boolean) : [];
   } catch {
+    // JSON corrupto: se guarda aparte en vez de descartarlo en silencio, porque
+    // el efecto de abajo pisaria el historial con [] y se perderia entero.
+    try {
+      const crudo = localStorage.getItem(CLAVE_HISTORIAL);
+      if (crudo) localStorage.setItem(`${CLAVE_HISTORIAL}-corrupto`, crudo);
+    } catch { /* el navegador no deja escribir: no hay nada mas que hacer */ }
     return [];
   }
 }
@@ -31,15 +43,21 @@ export default function App() {
   const [diag, setDiag] = useState(DIAGNOSTICO_VACIO);
   const [mostrarResultado, setMostrar] = useState(false);
   const [tituloLectura, setTituloLectura] = useState('');
+  const [medicion, setMedicion] = useState(MEDICION_VACIA);
   const [sesiones, setSesiones] = useState(cargarSesiones);
 
+  // No reescribir el storage en el primer render: si la carga fallo, meteria [] encima.
+  const primerRender = useRef(true);
   useEffect(() => {
+    if (primerRender.current) { primerRender.current = false; return; }
     try {
-      localStorage.setItem('oratoria-historial', JSON.stringify(sesiones));
+      localStorage.setItem(CLAVE_HISTORIAL, JSON.stringify(sesiones));
     } catch {
       // La checklist sigue funcionando aunque el navegador no permita guardar.
     }
   }, [sesiones]);
+
+  const ppm = calcularPpm(medicion);
 
   const totalItems = bloques.reduce((total, bloque) => total + bloque.items.length, 0);
   const seleccionados = Object.values(checks).filter(Boolean).length;
@@ -63,6 +81,7 @@ export default function App() {
     setChecks({});
     setDiag(DIAGNOSTICO_VACIO);
     setTituloLectura('');
+    setMedicion(MEDICION_VACIA);
     setMostrar(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -110,10 +129,19 @@ export default function App() {
           </section>
 
           <div className="checklist" aria-label="Checklist de escucha activa">
-            {bloques.map(bloque => (
-              <Bloque key={bloque.id} bloque={bloque} checks={checks} onToggle={toggle} />
+            {bloques.map((bloque, orden) => (
+              <Bloque key={bloque.id} bloque={bloque} checks={checks} onToggle={toggle} orden={orden} />
             ))}
           </div>
+
+          <Medicion
+            valores={medicion}
+            ppm={ppm}
+            onChange={(key, value) => {
+              setMedicion(prev => ({ ...prev, [key]: value }));
+              setMostrar(false);
+            }}
+          />
 
           <Diagnostico
             valores={diag}
@@ -139,9 +167,12 @@ export default function App() {
                 onGuardar={guardarSesion}
                 tituloLectura={tituloLectura}
                 sesionesAnteriores={sesiones}
+                ppm={ppm}
               />
             )}
           </div>
+
+          <Fuentes />
         </main>
 
         <Historial sesiones={sesiones} onBorrar={borrarSesion} />

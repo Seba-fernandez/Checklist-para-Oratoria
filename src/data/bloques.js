@@ -1,6 +1,6 @@
 export const bloques = [
   {
-    id: 1, name: "Claridad", color: "var(--cat1)", icon: "🔤",
+    id: 1, name: "Claridad", subtitle: "Dicción, vocalización y comprensión",
     items: [
       "Cuesta entender algunas palabras",
       "Me como finales de palabras",
@@ -13,7 +13,7 @@ export const bloques = [
     extra: "Probá leer con un lápiz entre los dientes 30 seg. antes de grabar — activa la musculatura articulatoria."
   },
   {
-    id: 2, name: "Ritmo", color: "var(--cat2)", icon: "🎵",
+    id: 2, name: "Ritmo", subtitle: "Velocidad, pausas y variaciones",
     items: [
       "Hablo demasiado rápido",
       "Hablo demasiado lento",
@@ -26,7 +26,7 @@ export const bloques = [
     extra: "Grabate solo los primeros 30 seg. a velocidad muy lenta — ayuda a calibrar el punto medio."
   },
   {
-    id: 3, name: "Intención", color: "var(--cat3)", icon: "🎭",
+    id: 3, name: "Intención", subtitle: "Tono, énfasis y emoción",
     items: [
       "Suena a lectura mecánica, sin mensaje",
       "No cambio el tono según el texto",
@@ -39,7 +39,7 @@ export const bloques = [
     extra: "Leé el fragmento una vez en silencio imaginando que lo estás contando a un amigo, no leyendo. Después grabá."
   },
   {
-    id: 4, name: "Pausas", color: "var(--cat4)", icon: "⏸️",
+    id: 4, name: "Pausas", subtitle: "Respiración y espacio entre ideas",
     items: [
       "Corto frases donde no corresponde",
       "Las pausas suenan forzadas o inexistentes",
@@ -51,7 +51,7 @@ export const bloques = [
     extra: "Antes de grabar, leé el texto marcando con '/' cada lugar donde respirarías naturalmente."
   },
   {
-    id: 5, name: "Seguridad", color: "var(--cat5)", icon: "💪",
+    id: 5, name: "Seguridad", subtitle: "Firmeza, volumen y confianza",
     items: [
       "Hay titubeos frecuentes",
       "Repito palabras por duda",

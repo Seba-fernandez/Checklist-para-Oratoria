@@ -1,5 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { bloques } from '../data/bloques';
+import { evaluar, FUENTES } from '../motor/index.js';
+import useRevelado from '../hooks/useRevelado';
+import { claseNota } from './claseNota';
+
+const TITULOS = {
+  AREA: 'Área crítica',
+  'QUE PASA': 'Qué está pasando',
+  'PARA LA PROXIMA': 'Para la próxima grabación',
+  CRITERIO: 'Criterio aplicado',
+};
 
 async function pedirIA(payload) {
   const response = await fetch('/api/diagnostico', {
@@ -12,7 +22,22 @@ async function pedirIA(payload) {
   return data.texto || '';
 }
 
-export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesionesAnteriores }) {
+// Separa el texto del modelo en las cuatro secciones que pide el prompt.
+function partir(texto) {
+  const partes = [];
+  const regex = /^##\s*(.+?)\s*$/gm;
+  const cortes = [...texto.matchAll(regex)];
+  if (!cortes.length) return [{ clave: null, titulo: null, cuerpo: texto.trim() }];
+  cortes.forEach((corte, i) => {
+    const desde = corte.index + corte[0].length;
+    const hasta = i + 1 < cortes.length ? cortes[i + 1].index : texto.length;
+    const clave = corte[1].toUpperCase();
+    partes.push({ clave, titulo: TITULOS[clave] || corte[1], cuerpo: texto.slice(desde, hasta).trim() });
+  });
+  return partes;
+}
+
+export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesionesAnteriores, ppm }) {
   const [respuesta, setRespuesta] = useState('');
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -20,14 +45,22 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesi
   const [guardado, setGuardado] = useState(false);
   const [errorGuardado, setErrorGuardado] = useState('');
   const [intento, setIntento] = useState(0);
+  const ref = useRevelado();
 
-  const scores = bloques.map(bloque => ({
-    ...bloque,
-    count: bloque.items.filter((_, index) => checks[`${bloque.id}-${index}`]).length,
-  }));
-  const itemsMarcados = bloques.flatMap(bloque => bloque.items
-    .map((texto, index) => ({ bloque: bloque.name, texto, marcado: !!checks[`${bloque.id}-${index}`] }))
-    .filter(item => item.marcado));
+  // Los ítems marcados llevan el índice: es lo que la rúbrica usa para
+  // ponderar por gravedad.
+  const marcados = useMemo(() => bloques.flatMap(bloque => bloque.items
+    .map((texto, idx) => ({ bloque: bloque.name, idx, texto }))
+    .filter(item => checks[`${bloque.id}-${item.idx}`])), [checks]);
+
+  // Rúbrica calculada en el navegador: notas y área crítica aparecen al
+  // instante, sin esperar a la IA y sin costo de tokens.
+  const rubrica = useMemo(() => evaluar(marcados, { ppm }), [marcados, ppm]);
+
+  const porBloque = useMemo(
+    () => new Map(rubrica.criterios.map(c => [c.bloque, c])),
+    [rubrica]
+  );
 
   useEffect(() => {
     let vigente = true;
@@ -35,7 +68,7 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesi
       setCargando(true);
       setError('');
       try {
-        const texto = await pedirIA({ tipo: 'diagnostico', items: itemsMarcados, diag });
+        const texto = await pedirIA({ tipo: 'diagnostico', marcados, diag, ppm, titulo: tituloLectura });
         if (vigente) setRespuesta(texto);
       } catch (exception) {
         if (vigente) setError(exception.message);
@@ -54,27 +87,33 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesi
     try {
       let texto = (await pedirIA({
         tipo: 'progreso',
-        items: itemsMarcados,
-        scores: scores.map(({ name, count, items }) => ({ name, count, total: items.length })),
+        marcados,
+        ppm,
         titulo: tituloLectura,
-        diagnostico: respuesta,
         historial: sesionesAnteriores || [],
       })).trim();
       texto = texto.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
 
       let parsed;
       try { parsed = JSON.parse(texto); }
-      catch { parsed = { area: 'Sin clasificar', resumen: texto.slice(0, 200), progreso: null }; }
+      catch { parsed = null; }
+
+      // Si el modelo falla, la sesión se guarda igual con las notas de la
+      // rúbrica: el historial no depende de la IA.
+      const progreso = parsed?.progreso || Object.fromEntries(
+        rubrica.criterios.map(c => [c.bloque, { nota: c.nota, tendencia: 'estable', detalle: c.descriptor }])
+      );
 
       onGuardar({
         titulo: tituloLectura || `Lectura ${Date.now()}`,
         fecha: new Date().toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }),
-        area: parsed.area || 'Sin clasificar',
-        resumen: parsed.resumen || '',
-        items: itemsMarcados.map(item => `[${item.bloque}] ${item.texto}`),
+        area: parsed?.area || rubrica.areaCritica.bloque,
+        resumen: parsed?.resumen || '',
+        items: marcados.map(item => `[${item.bloque}] ${item.texto}`),
         notas: [diag.problema, diag.ejemplo, diag.correccion].filter(Boolean).join(' · '),
-        scores: scores.map(({ name, count, items }) => ({ name, count, total: items.length })),
-        progreso: parsed.progreso || null,
+        global: rubrica.global,
+        ppm: rubrica.ppm?.ppm ?? null,
+        progreso,
       });
       setGuardado(true);
       window.setTimeout(() => setGuardado(false), 2500);
@@ -85,48 +124,82 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesi
     }
   }
 
-  function renderTexto(texto) {
-    return texto.split('\n').map((linea, index) => {
-      const partes = linea.split(/\*\*(.+?)\*\*/g);
-      return <p key={index}>{partes.map((parte, partIndex) => partIndex % 2 ? <strong key={partIndex}>{parte}</strong> : parte)}</p>;
-    });
-  }
+  const area = rubrica.areaCritica;
+  const fuentesArea = area.fuentes.map(k => FUENTES[k]?.corto).filter(Boolean).join(' · ');
 
   return (
-    <section className="result-wrap" aria-labelledby="resultado-title">
+    <section className="result-wrap" aria-labelledby="resultado-title" ref={ref}>
       <article className="result-card">
         <header className="result-head">
           <span className="result-stamp" aria-hidden="true">声</span>
           <div>
-            <div className="result-overline">Una guía para seguir practicando</div>
+            <div className="result-overline">Rúbrica aplicada · {rubrica.totalMarcados} puntos marcados</div>
             <h2 className="result-title" id="resultado-title">Tu diagnóstico</h2>
           </div>
+          <span className="result-global" aria-label={`Nota global ${rubrica.global} sobre 10`}>
+            <strong>{rubrica.global}</strong><span>/10</span>
+          </span>
         </header>
 
-        <div className="result-scores" aria-label="Resumen de puntos por área">
-          {scores.map(bloque => {
-            const porcentaje = Math.round((bloque.count / bloque.items.length) * 100);
+        <div className="result-scores" aria-label="Nota por dimensión">
+          {bloques.map(bloque => {
+            const c = porBloque.get(bloque.name);
+            if (!c) return null;
             return (
               <div className="result-score" key={bloque.id}>
-                <span>{bloque.name}</span>
-                <div className="score-track"><div className="score-fill" style={{ width: `${porcentaje}%` }} /></div>
-                <span>{bloque.count}</span>
+                <span className="result-score-name">
+                  {bloque.name}
+                  <em>{c.nivel}</em>
+                </span>
+                <div className="score-track">
+                  <div
+                    className={`score-fill nota-${claseNota(c.nota)}`}
+                    style={{ width: `${c.nota * 10}%` }}
+                  />
+                </div>
+                <span className="result-score-nota">{c.nota}</span>
               </div>
             );
           })}
         </div>
 
+        {rubrica.ppm && (
+          <p className="result-measure">
+            Velocidad medida: <strong>{rubrica.ppm.ppm} ppm</strong> ({rubrica.ppm.estado}).
+            Franja óptima {rubrica.ppm.optimo[0]}–{rubrica.ppm.optimo[1]} ppm.
+          </p>
+        )}
+
         <div className="result-copy">
           {error ? (
             <div className="result-error" role="alert">
               <p>{error}</p>
-              <button type="button" className="button button-quiet" onClick={() => setIntento(value => value + 1)}>Reintentar análisis</button>
+              <p className="result-fallback">
+                Las notas y el área crítica de arriba igual son válidas: se calculan con la
+                rúbrica, no con la IA. El área a trabajar es <strong>{area.bloque}</strong>.
+                {' '}{area.correccion}
+              </p>
+              <button type="button" className="button button-quiet" onClick={() => setIntento(value => value + 1)}>Reintentar redacción</button>
             </div>
           ) : cargando ? (
-            <div className="result-loading"><span className="loading-dot" aria-hidden="true" /> Analizando tu escucha…</div>
-          ) : renderTexto(respuesta)}
-          {errorGuardado && <p className="result-error" role="alert">No se pudo guardar: {errorGuardado}</p>}
+            <div className="result-loading"><span className="loading-dot" aria-hidden="true" /> Redactando sobre la rúbrica…</div>
+          ) : (
+            partir(respuesta).map((parte, i) => (
+              <div className="result-section" key={i}>
+                {parte.titulo && <h3 className="result-section-title">{parte.titulo}</h3>}
+                {parte.cuerpo.split('\n').filter(Boolean).map((linea, j) => (
+                  <p key={j}>{linea.replace(/\*\*/g, '')}</p>
+                ))}
+              </div>
+            ))
+          )}
         </div>
+
+        <footer className="result-foot">
+          <span className="result-crit">[{area.id}] {area.competencia}</span>
+          <span className="result-src">{fuentesArea}</span>
+          <span className="result-ev">Evidencia: {area.evidencia}</span>
+        </footer>
       </article>
 
       {respuesta && !cargando && !error && (

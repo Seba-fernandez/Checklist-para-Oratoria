@@ -1,23 +1,18 @@
 import Item from './Item';
+import useRevelado from '../hooks/useRevelado';
 
-const DESCRIPCIONES = {
-  Claridad: 'Dicción, vocalización y comprensión',
-  Ritmo: 'Velocidad, pausas y variaciones',
-  Intención: 'Tono, énfasis y emoción',
-  Pausas: 'Respiración y espacio entre ideas',
-  Seguridad: 'Firmeza, volumen y confianza',
-};
-
-export default function Bloque({ bloque, checks, onToggle }) {
+export default function Bloque({ bloque, checks, onToggle, orden = 0 }) {
+  // Escalonado: cada bloque entra 70 ms despues del anterior.
+  const ref = useRevelado({ delay: orden * 70 });
   const count = bloque.items.filter((_, i) => checks[`${bloque.id}-${i}`]).length;
 
   return (
-    <section className="block-card" aria-labelledby={`bloque-${bloque.id}`}>
+    <section className="block-card" aria-labelledby={`bloque-${bloque.id}`} ref={ref}>
       <div className="block-head">
         <span className="block-index" aria-hidden="true">0{bloque.id}</span>
         <div className="block-heading">
           <h2 className="block-title" id={`bloque-${bloque.id}`}>{bloque.name}</h2>
-          <p className="block-subtitle">{DESCRIPCIONES[bloque.name]}</p>
+          <p className="block-subtitle">{bloque.subtitle}</p>
         </div>
         <span className={`block-count${count ? ' is-active' : ''}`} aria-label={`${count} de ${bloque.items.length} marcados`}>
           {count} / {bloque.items.length}
