@@ -34,9 +34,18 @@ App de autoevaluación de lectura en voz alta para un curso de oratoria. Pieza d
 - **Capturas renovadas** de escritorio (1440) y móvil (390), más una del panel de fuentes, en `public/img/`.
 - **Objetivos táctiles**: los enlaces "Ver fuente" y el `summary` del método quedaban bajo 44 px. Corregidos.
 - **Limpieza de código muerto.** `bloques.js` tenía `color` apuntando a variables CSS (`--cat1`…`--cat5`) que nunca existieron, e `icon` que ningún componente renderizaba: ambos eliminados. El keyframe `rise-in` quedó sin uso al pasar al revelado por scroll: eliminado.
+- **Escala de nota unificada.** `Resultado` coloreaba por clases CSS (cortes 3/5/7) y `Historial` por hex inline (cortes 8/6/4): una misma nota de 4 salía naranja en un lado y bermellón en el otro. Ahora ambos usan `claseNota()`, derivada de los anclajes de `marco.js`, así el color y el nivel escrito nunca se contradicen.
+- **El historial ya no se puede perder.** Si el JSON de `localStorage` estaba corrupto, la carga devolvía `[]` y el efecto de persistencia lo escribía encima: historial borrado sin aviso. Ahora el corrupto se copia a `oratoria-historial-corrupto` y el efecto no escribe en el primer render.
+- **`idx` validado por bloque en la API.** El tope era global (5), así que el servidor aceptaba `idx: 4` en Pausas, que tiene 4 indicadores, y lo puntuaba con gravedad 0. Ahora cada bloque valida contra su propia cantidad.
+- **Datos que nadie leía.** `scores` se guardaba en cada sesión y se migraba para las viejas sin que ningún componente lo renderizara: eliminado. `global` y `ppm` sí se guardaban y tampoco se leían, pero valían la pena: ahora se muestran en cada sesión del historial.
+- **Payload muerto en la API.** Devolvía `rubrica` con un comentario diciendo que la UI la usaba si fallaba el modelo. No la usaba: la recalcula el navegador. Fuera la respuesta y el comentario.
+- **Más código muerto.** Variables CSS `--paper` y `--white`, definidas y nunca usadas. Export `criterioDe` del motor, sin consumidores.
 - **Subtítulo de bloque unificado.** La copy vivía en un mapa `DESCRIPCIONES` dentro de `Bloque.jsx`, indexado por nombre visible: si alguien renombraba un bloque, el subtítulo desaparecía sin aviso. Pasó a ser el campo `subtitle` de `bloques.js`, junto al resto de los datos del bloque. El texto es idéntico al anterior.
 
 ## Revisado en este paso
+
+Auditoría cruzada hecha por un agente aparte que no vio el código mientras se escribía. Encontró siete incoherencias; las seis que importaban están arregladas arriba. La séptima (`result-src`, `history-list`, `measure-panel` y `sources-panel` son clases sin regla propia en el CSS) se deja: son ganchos semánticos que sirven para apuntar estilos más adelante.
+
 
 - Build de producción limpio.
 - Sin desborde horizontal en 1440 ni en 390 px.
@@ -48,8 +57,7 @@ App de autoevaluación de lectura en voz alta para un curso de oratoria. Pieza d
 
 - **Sin verificar en navegador real.** Todo se probó con Chrome headless (Playwright). Falta una pasada en Safari iOS y en Chrome Android.
 - **El diagnóstico redactado no se pudo probar end to end** en este entorno: no hay `ANTHROPIC_API_KEY`. La rúbrica, la medición y la UI sí.
-- `Historial.jsx` todavía no muestra la nota global ni las ppm, que ya se guardan en cada sesión.
-- El historial vive en `localStorage` bajo `oratoria-historial`. Las sesiones viejas no tienen `global` ni `ppm`: se leen como `null`, sin romper.
+- El historial vive en `localStorage` bajo `oratoria-historial`. Las sesiones viejas no tienen `global` ni `ppm`: la etiqueta simplemente no se dibuja.
 
 ## Cómo sigue el preset
 

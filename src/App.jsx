@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { bloques } from './data/bloques';
 import Header from './components/Header';
 import Bloque from './components/Bloque';
@@ -10,6 +10,7 @@ import Fuentes from './components/Fuentes';
 
 const DIAGNOSTICO_VACIO = { problema: '', ejemplo: '', correccion: '' };
 const MEDICION_VACIA = { palabras: '', minutos: '', segundos: '' };
+const CLAVE_HISTORIAL = 'oratoria-historial';
 
 // Palabras por minuto a partir de lo que cargo el alumno. Si falta un dato,
 // devuelve undefined y el criterio de Ritmo queda solo autoevaluado.
@@ -22,18 +23,17 @@ function calcularPpm({ palabras, minutos, segundos }) {
 
 function cargarSesiones() {
   try {
-    const guardado = localStorage.getItem('oratoria-historial');
+    const guardado = localStorage.getItem(CLAVE_HISTORIAL);
     if (!guardado) return [];
-    return JSON.parse(guardado).map(sesion => {
-      if (sesion.scores) return sesion;
-      const scores = bloques.map(bloque => ({
-        name: bloque.name,
-        count: (sesion.items || []).filter(item => item.startsWith(`[${bloque.name}]`)).length,
-        total: bloque.items.length,
-      }));
-      return { ...sesion, scores };
-    });
+    const datos = JSON.parse(guardado);
+    return Array.isArray(datos) ? datos.filter(Boolean) : [];
   } catch {
+    // JSON corrupto: se guarda aparte en vez de descartarlo en silencio, porque
+    // el efecto de abajo pisaria el historial con [] y se perderia entero.
+    try {
+      const crudo = localStorage.getItem(CLAVE_HISTORIAL);
+      if (crudo) localStorage.setItem(`${CLAVE_HISTORIAL}-corrupto`, crudo);
+    } catch { /* el navegador no deja escribir: no hay nada mas que hacer */ }
     return [];
   }
 }
@@ -46,9 +46,12 @@ export default function App() {
   const [medicion, setMedicion] = useState(MEDICION_VACIA);
   const [sesiones, setSesiones] = useState(cargarSesiones);
 
+  // No reescribir el storage en el primer render: si la carga fallo, meteria [] encima.
+  const primerRender = useRef(true);
   useEffect(() => {
+    if (primerRender.current) { primerRender.current = false; return; }
     try {
-      localStorage.setItem('oratoria-historial', JSON.stringify(sesiones));
+      localStorage.setItem(CLAVE_HISTORIAL, JSON.stringify(sesiones));
     } catch {
       // La checklist sigue funcionando aunque el navegador no permita guardar.
     }

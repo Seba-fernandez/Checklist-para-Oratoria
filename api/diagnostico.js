@@ -14,8 +14,9 @@ const MODELO = 'claude-haiku-4-5-20251001';
 
 // ── Sanitizado: limita tamaños para que no se pueda abusar del endpoint ──
 const txt = (v, max = 500) => (typeof v === 'string' ? v.slice(0, max) : '');
-const BLOQUES_VALIDOS = new Set(CRITERIOS.map(c => c.bloque));
-const MAX_IDX = Math.max(...CRITERIOS.map(c => c.indicadores.length));
+// Cuantos indicadores tiene cada bloque. Un maximo global dejaria pasar idx=4
+// en Pausas, que solo tiene 4 indicadores, y se puntuaria con gravedad 0.
+const INDICADORES_POR_BLOQUE = new Map(CRITERIOS.map(c => [c.bloque, c.indicadores.length]));
 
 // Solo se aceptan bloques e índices que existan en el marco. Cualquier otra
 // cosa se descarta antes de llegar a la rúbrica.
@@ -25,8 +26,9 @@ function limpiarMarcados(marcados) {
   return marcados.slice(0, 40).reduce((acc, m) => {
     const bloque = txt(m?.bloque, 40);
     const idx = Number(m?.idx);
-    if (!BLOQUES_VALIDOS.has(bloque)) return acc;
-    if (!Number.isInteger(idx) || idx < 0 || idx >= MAX_IDX) return acc;
+    const tope = INDICADORES_POR_BLOQUE.get(bloque);
+    if (tope === undefined) return acc;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= tope) return acc;
     const clave = `${bloque}-${idx}`;
     if (vistos.has(clave)) return acc;
     vistos.add(clave);
@@ -131,11 +133,11 @@ export default async function handler(req, res) {
 
   try {
     const texto = await pedirAClaude(prompt, maxTokens);
-    // Se devuelve también la rúbrica: la UI muestra notas y fuentes incluso si
-    // el modelo falla, porque esa parte no depende de la IA.
-    return res.status(200).json({ texto, rubrica });
+    // Solo el texto: la rúbrica la recalcula el navegador con el mismo motor,
+    // así que mandarla de vuelta sería payload muerto.
+    return res.status(200).json({ texto });
   } catch (e) {
     const status = e.status && e.status >= 400 && e.status < 600 ? e.status : 502;
-    return res.status(status).json({ error: e.status ? e.message : 'No se pudo contactar a la IA', rubrica });
+    return res.status(status).json({ error: e.status ? e.message : 'No se pudo contactar a la IA' });
   }
 }

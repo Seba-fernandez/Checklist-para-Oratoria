@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { bloques } from '../data/bloques';
 import { evaluar, FUENTES } from '../motor/index.js';
 import useRevelado from '../hooks/useRevelado';
+import { claseNota } from './claseNota';
 
 const TITULOS = {
   AREA: 'Área crítica',
@@ -110,11 +111,6 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesi
         resumen: parsed?.resumen || '',
         items: marcados.map(item => `[${item.bloque}] ${item.texto}`),
         notas: [diag.problema, diag.ejemplo, diag.correccion].filter(Boolean).join(' · '),
-        scores: bloques.map(bloque => ({
-          name: bloque.name,
-          count: marcados.filter(m => m.bloque === bloque.name).length,
-          total: bloque.items.length,
-        })),
         global: rubrica.global,
         ppm: rubrica.ppm?.ppm ?? null,
         progreso,
@@ -157,7 +153,7 @@ export default function Resultado({ checks, diag, onGuardar, tituloLectura, sesi
                 </span>
                 <div className="score-track">
                   <div
-                    className={`score-fill nota-${c.nota <= 3 ? 'baja' : c.nota <= 5 ? 'media' : c.nota <= 7 ? 'buena' : 'alta'}`}
+                    className={`score-fill nota-${claseNota(c.nota)}`}
                     style={{ width: `${c.nota * 10}%` }}
                   />
                 </div>

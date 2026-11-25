@@ -178,5 +178,3 @@ export const CRITERIOS = [
     ],
   },
 ];
-
-export const criterioDe = (bloque) => CRITERIOS.find(c => c.bloque === bloque) || null;
