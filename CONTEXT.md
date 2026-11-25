@@ -33,6 +33,8 @@ App de autoevaluación de lectura en voz alta para un curso de oratoria. Pieza d
 - **Revelado de gota líquida** al scrollear: squash en la caída, apertura en el impacto y rebote corto, con `cubic-bezier(.42, 0, .2, 1)`. Escalonado de 70 ms entre bloques.
 - **Capturas renovadas** de escritorio (1440) y móvil (390), más una del panel de fuentes, en `public/img/`.
 - **Objetivos táctiles**: los enlaces "Ver fuente" y el `summary` del método quedaban bajo 44 px. Corregidos.
+- **Limpieza de código muerto.** `bloques.js` tenía `color` apuntando a variables CSS (`--cat1`…`--cat5`) que nunca existieron, e `icon` que ningún componente renderizaba: ambos eliminados. El keyframe `rise-in` quedó sin uso al pasar al revelado por scroll: eliminado.
+- **Subtítulo de bloque unificado.** La copy vivía en un mapa `DESCRIPCIONES` dentro de `Bloque.jsx`, indexado por nombre visible: si alguien renombraba un bloque, el subtítulo desaparecía sin aviso. Pasó a ser el campo `subtitle` de `bloques.js`, junto al resto de los datos del bloque. El texto es idéntico al anterior.
 
 ## Revisado en este paso
 
@@ -46,7 +48,6 @@ App de autoevaluación de lectura en voz alta para un curso de oratoria. Pieza d
 
 - **Sin verificar en navegador real.** Todo se probó con Chrome headless (Playwright). Falta una pasada en Safari iOS y en Chrome Android.
 - **El diagnóstico redactado no se pudo probar end to end** en este entorno: no hay `ANTHROPIC_API_KEY`. La rúbrica, la medición y la UI sí.
-- `bloques.js` conserva `color` e `icon` por bloque que ningún componente usa, y `color` apunta a variables CSS (`--cat1`…`--cat5`) que no existen en `index.css`. No se tocaron: son datos muertos pero inofensivos. **Preguntar antes de limpiar.**
 - `Historial.jsx` todavía no muestra la nota global ni las ppm, que ya se guardan en cada sesión.
 - El historial vive en `localStorage` bajo `oratoria-historial`. Las sesiones viejas no tienen `global` ni `ppm`: se leen como `null`, sin romper.
 

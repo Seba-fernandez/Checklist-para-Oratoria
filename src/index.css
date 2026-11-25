@@ -159,7 +159,6 @@ textarea.text-field { min-height: 82px; resize: vertical; }
 .loading-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--vermilion); animation: breathe 1.2s ease-in-out infinite; }
 .save-row { display: flex; justify-content: flex-end; padding-top: 12px; }
 
-@keyframes rise-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes breathe { 50% { opacity: .35; transform: scale(.8); } }
 
 @media (max-width: 860px) {
