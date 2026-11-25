@@ -5,8 +5,20 @@ import Bloque from './components/Bloque';
 import Diagnostico from './components/Diagnostico';
 import Resultado from './components/Resultado';
 import Historial from './components/Historial';
+import Medicion from './components/Medicion';
+import Fuentes from './components/Fuentes';
 
 const DIAGNOSTICO_VACIO = { problema: '', ejemplo: '', correccion: '' };
+const MEDICION_VACIA = { palabras: '', minutos: '', segundos: '' };
+
+// Palabras por minuto a partir de lo que cargo el alumno. Si falta un dato,
+// devuelve undefined y el criterio de Ritmo queda solo autoevaluado.
+function calcularPpm({ palabras, minutos, segundos }) {
+  const p = Number(palabras);
+  const seg = Number(minutos || 0) * 60 + Number(segundos || 0);
+  if (!Number.isFinite(p) || p <= 0 || !Number.isFinite(seg) || seg < 10) return undefined;
+  return (p / seg) * 60;
+}
 
 function cargarSesiones() {
   try {
@@ -31,6 +43,7 @@ export default function App() {
   const [diag, setDiag] = useState(DIAGNOSTICO_VACIO);
   const [mostrarResultado, setMostrar] = useState(false);
   const [tituloLectura, setTituloLectura] = useState('');
+  const [medicion, setMedicion] = useState(MEDICION_VACIA);
   const [sesiones, setSesiones] = useState(cargarSesiones);
 
   useEffect(() => {
@@ -40,6 +53,8 @@ export default function App() {
       // La checklist sigue funcionando aunque el navegador no permita guardar.
     }
   }, [sesiones]);
+
+  const ppm = calcularPpm(medicion);
 
   const totalItems = bloques.reduce((total, bloque) => total + bloque.items.length, 0);
   const seleccionados = Object.values(checks).filter(Boolean).length;
@@ -63,6 +78,7 @@ export default function App() {
     setChecks({});
     setDiag(DIAGNOSTICO_VACIO);
     setTituloLectura('');
+    setMedicion(MEDICION_VACIA);
     setMostrar(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -110,10 +126,19 @@ export default function App() {
           </section>
 
           <div className="checklist" aria-label="Checklist de escucha activa">
-            {bloques.map(bloque => (
-              <Bloque key={bloque.id} bloque={bloque} checks={checks} onToggle={toggle} />
+            {bloques.map((bloque, orden) => (
+              <Bloque key={bloque.id} bloque={bloque} checks={checks} onToggle={toggle} orden={orden} />
             ))}
           </div>
+
+          <Medicion
+            valores={medicion}
+            ppm={ppm}
+            onChange={(key, value) => {
+              setMedicion(prev => ({ ...prev, [key]: value }));
+              setMostrar(false);
+            }}
+          />
 
           <Diagnostico
             valores={diag}
@@ -139,9 +164,12 @@ export default function App() {
                 onGuardar={guardarSesion}
                 tituloLectura={tituloLectura}
                 sesionesAnteriores={sesiones}
+                ppm={ppm}
               />
             )}
           </div>
+
+          <Fuentes />
         </main>
 
         <Historial sesiones={sesiones} onBorrar={borrarSesion} />
