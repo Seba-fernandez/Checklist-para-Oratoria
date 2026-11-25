@@ -53,9 +53,29 @@ Auditoría cruzada hecha por un agente aparte que no vio el código mientras se 
 - `prefers-reduced-motion`: el hook saltea el observer y marca `listo` de entrada; además hay una regla explícita que anula transform y filter.
 - Degradación sin IA: si la API falla, se muestran igual las notas, el área crítica y la corrección del marco.
 
+## Verificación entre motores — 25/11/2026
+
+Pasada en los tres motores de render, cada uno en 1440x1000 y 390x844. Resultados coincidentes, sin una sola falla.
+
+| | Blink (Chrome 1243) | WebKit 26.6 (Safari) | Gecko 155 (Firefox) |
+|---|---|---|---|
+| Revelado por scroll: ningún bloque queda invisible | ✓ | ✓ | ✓ |
+| Selectores con tilde (`.is-óptimo`, `.is-muy-rápido`) | ✓ | ✓ | ✓ |
+| `prefers-reduced-motion` | ✓ | ✓ | ✓ |
+| Sin desborde horizontal | ✓ | ✓ | ✓ |
+| Objetivos táctiles ≥ 44 px | ✓ | ✓ | ✓ |
+| Errores de consola | 0 | 0 | 0 |
+
+Los dos puntos que más riesgo tenían pasaron en los tres:
+
+- **El revelado.** `data-revelar` arranca en `pendiente` con `opacity: 0`. Si `IntersectionObserver` o el keyframe fallaban en algún motor, el bloque quedaba invisible para siempre. Scrolleando hasta el fondo, 0 de 7 elementos quedan en `pendiente` y ninguno con opacity 0.
+- **Las clases con tilde.** `Medicion.jsx` genera el selector con `is-${estado.replace(/\s/g,'-')}`, lo que produce clases no-ASCII. Los tres motores las matchean y aplican el color correcto: 193 ppm en ámbar (algo rápido), 180 en verde (óptimo), 240 en bermellón (muy rápido).
+
+Diferencia menor y sin efecto: Firefox normaliza el `08` del campo de segundos a `8` y deja `transform: matrix(1,0,0,1,0,0)` donde los otros dejan `none`. El cálculo y el render son idénticos.
+
 ## Pendiente
 
-- **Sin verificar en navegador real.** Todo se probó con Chrome headless (Playwright). Falta una pasada en Safari iOS y en Chrome Android.
+- **Falta probar en dispositivo real.** Los tres motores de render están verificados (ver abajo), pero no se probó en hardware: táctil real, teclado del sistema, barra de direcciones que cambia el alto del viewport, Safari iOS con la barra inferior.
 - **El diagnóstico redactado no se pudo probar end to end** en este entorno: no hay `ANTHROPIC_API_KEY`. La rúbrica, la medición y la UI sí.
 - El historial vive en `localStorage` bajo `oratoria-historial`. Las sesiones viejas no tienen `global` ni `ppm`: la etiqueta simplemente no se dibuja.
 
